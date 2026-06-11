@@ -1,0 +1,76 @@
+name: Download Firmware
+
+on:
+  workflow_dispatch:
+    inputs:
+      ap_url:
+        description: "SamFW AP download link"
+        required: true
+        type: string
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lz4 p7zip-full curl jq
+
+      - name: Download AP
+        run: |
+          curl -L "${{ github.event.inputs.ap_url }}" -o AP.zip
+
+      - name: Extract AP.zip
+        run: |
+          7z x AP.zip -oap_files -y
+          rm AP.zip
+
+      - name: Find and extract AP tar.md5
+        run: |
+          AP_TAR=$(find ap_files -name "AP*.tar.md5" | head -n 1)
+
+          if [ -z "$AP_TAR" ]; then
+            echo "No AP tar.md5 found!"
+            exit 1
+          fi
+
+          mkdir ap_tar
+          tar -xf "$AP_TAR" -C ap_tar
+
+          rm -rf ap_files
+          rm "$AP_TAR"
+
+      - name: Decompress super.img.lz4
+        run: |
+          SUPER_LZ4=$(find ap_tar -name "super.img.lz4" | head -n 1)
+
+          if [ -z "$SUPER_LZ4" ]; then
+            echo "No super.img.lz4 found!"
+            exit 1
+          fi
+
+          lz4 -d -f "$SUPER_LZ4" super.img
+
+          rm -rf ap_tar
+
+      - name: Upload to Gofile
+        id: gofile
+        run: |
+          SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name')
+
+          RESPONSE=$(curl -s \
+            -F "file=@super.img" \
+            "https://${SERVER}.gofile.io/uploadFile")
+
+          echo "$RESPONSE"
+
+          DOWNLOAD_LINK=$(echo "$RESPONSE" | jq -r '.data.downloadPage')
+
+          echo "download_link=$DOWNLOAD_LINK" >> $GITHUB_OUTPUT
+
+      - name: Show download link
+        run: |
+          echo "Gofile Link:"
+          echo "${{ steps.gofile.outputs.download_link }}"
