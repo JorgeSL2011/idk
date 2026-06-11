@@ -9,7 +9,7 @@ on:
         type: string
 
 jobs:
-  extract:
+  Download:
     runs-on: ubuntu-latest
 
     steps:
@@ -32,28 +32,40 @@ jobs:
           AP_TAR=$(find ap_files -name "AP*.tar.md5" | head -n 1)
 
           if [ -z "$AP_TAR" ]; then
-            echo "No AP tar.md5 found!"
+            echo "❌ No AP tar.md5 found!"
+            find ap_files
             exit 1
           fi
 
-          mkdir ap_tar
+          echo "📂 Found: $AP_TAR"
+
+          mkdir -p ap_tar
           tar -xf "$AP_TAR" -C ap_tar
 
+          echo "📋 Extracted files:"
+          find ap_tar -maxdepth 1 -type f
+
           rm -rf ap_files
-          rm "$AP_TAR"
 
-      - name: Decompress super.img.lz4
+      - name: Decompress super image
         run: |
-          SUPER_LZ4=$(find ap_tar -name "super.img.lz4" | head -n 1)
+          if [ -f ap_tar/super.img.lz4 ]; then
+            echo "🗜️ Found super.img.lz4"
+            lz4 -d -f ap_tar/super.img.lz4 super.img
 
-          if [ -z "$SUPER_LZ4" ]; then
-            echo "No super.img.lz4 found!"
+          elif [ -f ap_tar/super.img ]; then
+            echo "📦 Found raw super.img"
+            mv ap_tar/super.img super.img
+
+          else
+            echo "❌ No super image found"
+            find ap_tar
             exit 1
           fi
 
-          lz4 -d -f "$SUPER_LZ4" super.img
-
           rm -rf ap_tar
+
+          ls -lh super.img
 
       - name: Upload to Gofile
         id: gofile
