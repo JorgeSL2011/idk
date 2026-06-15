@@ -66,51 +66,66 @@ jobs:
       - name: 🗜️ Descomprimir e Indexar Imagen Super
         run: |
           if [ -f ap_tar/super.img.lz4 ]; then
-            echo "🗜️ Descomprimiendo bloque lz4 pesado de Samsung..."
+            echo "🗜️ Descomprimiendo bloque lz4 de Samsung..."
             lz4 -d -f ap_tar/super.img.lz4 super.img
           elif [ -f ap_tar/super.img ]; then
             echo "📦 Moviendo super.img crudo..."
             mv ap_tar/super.img super.img
           else
-            echo "❌ Error: ¡No hay rastro del super.img en el firmware!"
-            find ap_tar
+            echo "❌ Error: ¡No hay rastro del super.img!"
             exit 1
           fi
+          rm -rf ap_tar
 
-          rm -rf ap_tar # Limpieza del temporal de extracción
-          echo "- 🎉 ¡super.img reconstruido con éxito!"
-          ls -lh super.img
+      - name: 🛠️ Compilar/Instalar lpunpack y Rebanar Super.img
+        run: |
+          echo "- 🔧 Consiguiendo herramientas de particiones dinámicas..."
+          # Descargamos un lpunpack binario rápido para Linux de 64 bits
+          wget https://github.com/lonelyfool/lpunpack_and_lpmake/releases/download/v1.0/lpunpack -O lpunpack
+          chmod +x lpunpack
+          
+          mkdir -p particiones_sueltas
+          echo "- 🗜️ Desarmando super.img en imágenes lógicas individuales..."
+          ./lpunpack -o particiones_sueltas/ super.img
+          
+          echo "📋 Archivos extraídos del super:"
+          ls -lh particiones_sueltas/
+          rm -f super.img lpunpack # Borramos los pesados del mapa
 
-      - name: 📤 Subir a Hugging Face
+      - name: 🤐 Empacar imágenes sueltas en un ZIP
+        run: |
+          echo "- 📦 Creando particiones.zip..."
+          # Comprimimos la carpeta con las imágenes sueltas. 
+          # Al estar separadas, 7z eliminará el espacio vacío interno de system e imágenes de forma radical.
+          7z a -mx=1 particiones.zip ./particiones_sueltas/*
+          
+          echo "📋 Tamaño final del paquete comprimido listo para Hugging Face:"
+          ls -lh particiones.zip
+          rm -rf particiones_sueltas
+
+      - name: 📤 Subir ZIP de Particiones a Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # El script creará el repositorio 'LumiROM-Bases' en tu cuenta de Hugging Face de forma automática
           python3 -c "
           import os
-          from huggingface_hub import HfApi, create_repo
+          from huggingface_hub import HfApi
           
           token = os.getenv('HF_TOKEN')
-          repo_id = 'Joseph2011/Firmware'
+          repo_id = 'Jooseph2011/Firmware'
           
           if not token:
-              print('❌ Error: El secreto HF_TOKEN no está configurado en GitHub Settings.')
+              print('❌ Error: HF_TOKEN no configurado.')
               exit(1)
               
-          try:
-              create_repo(repo_id=repo_id, token=token, repo_type='dataset', private=False)
-              print('- Repositorio verificado/creado en Hugging Face.')
-          except Exception as e:
-              print('- Repositorio base ya existente en la cuenta.')
-              
           api = HfApi(token=token)
-          print('- 🚀 Subiendo super.img de 11.3 GB a Hugging Face desde Azure Backbone...')
+          print('- 🚀 Subiendo particiones.zip optimizado a Hugging Face...')
           
           api.upload_file(
-              path_or_fileobj='super.img',
-              path_in_repo='super.img',
+              path_or_fileobj='particiones.zip',
+              path_in_repo='particiones.zip',
               repo_id=repo_id,
               repo_type='dataset'
           )
-          print('- 🎉 ¡Subida completada al 100%! Archivo listo para ser inyectado en LumiROM.')
+          print('- 🎉 ¡Subida del ZIP de imágenes completada con éxito!')
           "
