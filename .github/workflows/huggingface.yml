@@ -77,20 +77,33 @@ jobs:
           fi
           rm -rf ap_tar
 
-      - name: 🛠️ Compilar/Instalar lpunpack y Rebanar Super.img
+      - name: 🛠️ Clonar, Compilar y Ejecutar lpunpack via make.sh
         run: |
-          echo "- 🔧 Consiguiendo herramientas de particiones dinámicas..."
-          # Descargamos un lpunpack binario rápido para Linux de 64 bits
-          wget https://github.com/lonelyfool/lpunpack_and_lpmake/releases/download/v1.0/lpunpack -O lpunpack
-          chmod +x lpunpack
+          echo "- 🔧 Clonando el repositorio oficial de lpunpack..."
+          git clone https://github.com/lonelyfool/lpunpack_and_lpmake.git lpunpack_repo
           
+          cd lpunpack_repo
+          echo "- 🔑 Otorgando permisos de ejecución a los scripts..."
+          chmod +x *.sh
+          
+          echo "- 🏗️ Compilando lpunpack nativamente en el Runner..."
+          ./make.sh
+          
+          # Movemos el binario recién compilado a la raíz del espacio de trabajo
+          cp lpunpack ../
+          cd ..
+          rm -rf lpunpack_repo # Limpieza inmediata del código fuente para ahorrar espacio
+
+      - name: 🪓 Rebanar Super.img en particiones sueltas
+        run: |
           mkdir -p particiones_sueltas
-          echo "- 🗜️ Desarmando super.img en imágenes lógicas individuales..."
+          echo "- 🗜️ Desarmando super.img usando el binario nativo..."
+          chmod +x lpunpack
           ./lpunpack -o particiones_sueltas/ super.img
           
-          echo "📋 Archivos extraídos del super:"
+          echo "📋 Archivos lógicos individuales extraídos (.img):"
           ls -lh particiones_sueltas/
-          rm -f super.img lpunpack # Borramos los pesados del mapa
+          rm -f super.img lpunpack # Destrucción del archivo de 11GB para evitar sobrecarga de disco
 
       - name: 🤐 Empacar imágenes sueltas en un ZIP
         run: |
