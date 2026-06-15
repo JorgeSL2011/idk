@@ -1,0 +1,116 @@
+name: 🚀 Descargar AP y Subir Super a Hugging Face
+
+on:
+  workflow_dispatch:
+    inputs:
+      ap_url:
+        description: "Enlace directo de descarga de SamFW AP / Firmware"
+        required: true
+        type: string
+
+jobs:
+  Download_and_Push:
+    runs-runs-on: ubuntu-latest
+
+    steps:
+      - name: ⚙️ Maximizar Espacio en Disco del Runner
+        # Eliminamos software preinstalado innecesario para garantizar ~35GB libres en Azure
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell
+          sudo apt-get clean
+          echo "✅ Espacio optimizado para la extracción de firmware pesado."
+
+      - name: 🔧 Instalar dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lz4 p7zip-full curl python3-pip
+          pip install --break-system-packages huggingface_hub
+          echo "✅ Dependencias de sistema y Hugging Face CLI listas."
+
+      - name: 📥 Descargar AP
+        run: |
+          echo "- Descargando el archivo AP de SamFW a máxima velocidad..."
+          # Usamos curl emulando un navegador básico por si SamFW tiene bloqueos de User-Agent
+          curl -L -H "User-Agent: Mozilla/5.0" "${{ github.event.inputs.ap_url }}" -o AP.zip
+          echo "✅ Descarga del ZIP finalizada."
+          ls -lh AP.zip
+
+      - name: 📦 Extraer AP.zip
+        run: |
+          echo "- Abriendo el paquete comprimido..."
+          7z x AP.zip -oap_files -y > /dev/null
+          rm -f AP.zip # Liberar espacio del zip inmediatamente
+          echo "✅ Extracción del AP lista."
+
+      - name: 📂 Encontrar y desarmar AP tar.md5
+        run: |
+          AP_TAR=$(find ap_files -name "AP*.tar.md5" -o -name "AP*.tar" | head -n 1)
+
+          if [ -z "$AP_TAR" ]; then
+            echo "❌ No se encontró el contenedor AP tar.md5!"
+            find ap_files
+            exit 1
+          fi
+
+          echo "📂 Contenedor detectado: $AP_TAR"
+          mkdir -p ap_tar
+          
+          # Extraer UNICAMENTE el super.img / super.img.lz4 del tar para no saturar el almacenamiento
+          echo "- Extrayendo selectivamente los bloques del super..."
+          tar -xf "$AP_TAR" -C ap_tar --wildcards "*super.img*" || tar -xf "$AP_TAR" -C ap_tar
+          
+          echo "📋 Archivos obtenidos del tar:"
+          find ap_tar -maxdepth 1 -type f
+          rm -rf ap_files # Destruir el resto de archivos .tar y md5 para recuperar gigabytes
+
+      - name: 🗜️ Descomprimir e Indexar Imagen Super
+        run: |
+          if [ -f ap_tar/super.img.lz4 ]; then
+            echo "🗜️ Descomprimiendo bloque lz4 pesado de Samsung..."
+            lz4 -d -f ap_tar/super.img.lz4 super.img
+          elif [ -f ap_tar/super.img ]; then
+            echo "📦 Moviendo super.img crudo..."
+            mv ap_tar/super.img super.img
+          else
+            echo "❌ Error: ¡No hay rastro del super.img en el firmware!"
+            find ap_tar
+            exit 1
+          fi
+
+          rm -rf ap_tar # Limpieza del temporal de extracción
+          echo "- 🎉 ¡super.img reconstruido con éxito!"
+          ls -lh super.img
+
+      - name: 📤 Subir a Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # El script creará el repositorio 'LumiROM-Bases' en tu cuenta de Hugging Face de forma automática
+          python3 -c "
+          import os
+          from huggingface_hub import HfApi, create_repo
+          
+          token = os.getenv('HF_TOKEN')
+          repo_id = 'JorgeSL2011/LumiROM-Bases'
+          
+          if not token:
+              print('❌ Error: El secreto HF_TOKEN no está configurado en GitHub Settings.')
+              exit(1)
+              
+          try:
+              create_repo(repo_id=repo_id, token=token, repo_type='dataset', private=False)
+              print('- Repositorio verificado/creado en Hugging Face.')
+          except Exception as e:
+              print('- Repositorio base ya existente en la cuenta.')
+              
+          api = HfApi(token=token)
+          print('- 🚀 Subiendo super.img de 11.3 GB a Hugging Face desde Azure Backbone...')
+          
+          api.upload_file(
+              path_or_fileobj='super.img',
+              path_in_repo='super.img',
+              repo_id=repo_id,
+              repo_type='dataset'
+          )
+          print('- 🎉 ¡Subida completada al 100%! Archivo listo para ser inyectado en LumiROM.')
+          "
