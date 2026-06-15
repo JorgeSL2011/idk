@@ -91,7 +91,7 @@ jobs:
           from huggingface_hub import HfApi, create_repo
           
           token = os.getenv('HF_TOKEN')
-          repo_id = 'JorgeSL2011/LumiROM-Bases'
+          repo_id = 'Jooseph2011/Firmware'
           
           if not token:
               print('❌ Error: El secreto HF_TOKEN no está configurado en GitHub Settings.')
