@@ -10,7 +10,7 @@ on:
 
 jobs:
   Download_and_Push:
-    runs-runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: ⚙️ Maximizar Espacio en Disco del Runner
